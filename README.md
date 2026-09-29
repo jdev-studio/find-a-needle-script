@@ -23,6 +23,6 @@ The needle has no object in the game until it's found (the server only sends whi
 | --- | --- |
 | N | Toggle needle ESP |
 | T | Toggle tracers |
-| Right Shift | Show / hide menu |
+| Right Ctrl | Show / hide menu |
 
-The menu starts hidden; press Right Shift to open it. The menu key can be changed in Settings. Settings also has a toggle for the menu's glow and trail effects.
+The menu starts hidden; press Right Ctrl to open it. The menu key can be changed in Settings. Settings also has a toggle for the menu's glow and trail effects.

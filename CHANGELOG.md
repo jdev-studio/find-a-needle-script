@@ -4,6 +4,10 @@ The current version is shown in the menu under Settings, and in the notification
 
 **Numbering:** each new feature or fix gets the next `1.0.x` number. If it takes more than one try to get right, the follow-ups get a letter: `1.0.1`, `1.0.1b`, `1.0.1c` and so on. The next feature moves on to `1.0.2`.
 
+## 1.0.2b - 2026-09-29
+
+- The menu key is Right Ctrl by default (was Right Shift). The load notification says Right Ctrl.
+
 ## 1.0.2 - 2026-09-29
 
 - The menu starts hidden. The load notification (and the console) says to press Right Shift to open it.
