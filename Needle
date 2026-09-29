@@ -740,7 +740,7 @@ print("UI loaded. "..keyName(app.Keybind).." toggles the menu.")
 return app
 end
 
-local VERSION = "1.0.1"
+local VERSION = "1.0.2"
 local SCAN_INTERVAL = 1
 local LABEL_INTERVAL = 0.2
 local WATCH_FOLDERS = { "HiddenNeedleClient", "NeedleObjectiveServer" }
@@ -1159,6 +1159,7 @@ if ui then
 	ui.Settings:AddLabel({ Title = "Version " .. VERSION, Description = "Needle Tracker", Icon = "info" })
 	ui.Tabs = { needleTab, ui.Settings }
 	needleTab:Select()
+	ui.Visible = false
 
 	local origDestroy = ui.Destroy
 	ui.Destroy = function(self)
@@ -1175,9 +1176,9 @@ local function flip(control, key)
 	end
 end
 
-local function notify(title, content, kind)
+local function notify(title, content, kind, duration)
 	if ui and ui.Alive then
-		ui:Notify({ Title = title, Content = content, Type = kind, Duration = 6 })
+		ui:Notify({ Title = title, Content = content, Type = kind, Duration = duration or 6 })
 	end
 end
 
@@ -1334,5 +1335,5 @@ connection = RunService.Heartbeat:Connect(function()
 	end
 end)
 
-print("[NeedleTracker] v" .. VERSION .. " running - N = ESP, T = tracers" .. (ui and "" or ", End = stop"))
-notify("Needle Tracker v" .. VERSION, "Tracks the needle once it's found", "success")
+print("[NeedleTracker] v" .. VERSION .. " loaded - " .. (ui and "press Right Shift to open the menu, " or "") .. "N = ESP, T = tracers" .. (ui and "" or ", End = stop"))
+notify("Needle Tracker v" .. VERSION, "Press Right Shift to open the menu", "success", 10)

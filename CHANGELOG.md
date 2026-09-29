@@ -4,6 +4,10 @@ The current version is shown in the menu under Settings, and in the notification
 
 **Numbering:** each new feature or fix gets the next `1.0.x` number. If it takes more than one try to get right, the follow-ups get a letter: `1.0.1`, `1.0.1b`, `1.0.1c` and so on. The next feature moves on to `1.0.2`.
 
+## 1.0.2 - 2026-09-29
+
+- The menu starts hidden. The load notification (and the console) says to press Right Shift to open it.
+
 ## 1.0.1 - 2026-09-29
 
 - Fixed the menu lagging behind the cursor. The tracker was walking the whole workspace (about 1,600 objects) in a loop that competed with the menu every frame. It now only checks the places a found needle can show up (top-level workspace objects, the camera, the needle folders, and players' characters and backpacks) once a second, and runs on Heartbeat like the Grand Blue script instead of its own loop.
