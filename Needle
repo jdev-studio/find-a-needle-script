@@ -740,13 +740,10 @@ print("UI loaded. "..keyName(app.Keybind).." toggles the menu.")
 return app
 end
 
-local VERSION = "1.0.0"
-local POLL_INTERVAL = 0.5
-local SCAN_BUDGET = 0.0015
+local VERSION = "1.0.1"
+local SCAN_INTERVAL = 1
 local LABEL_INTERVAL = 0.2
-local SKIP_FOLDERS = { HaystackClient = true, HayUnderMatClient = true, HaystackCollision = true }
-local WATCH_FOLDERS = { HiddenNeedleClient = true, NeedleObjectiveServer = true }
-local IGNORE_PREFIXES = { "Workspace.EndCutscene." }
+local WATCH_FOLDERS = { "HiddenNeedleClient", "NeedleObjectiveServer" }
 local COLOR = Color3.fromRGB(255, 60, 60)
 local EDGE_MARGIN = 40
 local VK_TOGGLE, VK_TRACERS, VK_QUIT = 0x4E, 0x54, 0x23
@@ -801,6 +798,9 @@ local function getChildrenOf(inst)
 end
 
 local function children(inst)
+	if not inst then
+		return EMPTY
+	end
 	local ok, list = pcall(getChildrenOf, inst)
 	if ok and type(list) == "table" then
 		return list
@@ -812,52 +812,45 @@ local function findChildOf(inst, name)
 	return inst:FindFirstChild(name)
 end
 
-local function find(root, path)
-	local cur = root
-	for i = 1, #path do
-		local ok, nxt = pcall(findChildOf, cur, path[i])
-		if not ok or not nxt then
-			return nil
-		end
-		cur = nxt
+local function child(inst, name)
+	if not inst then
+		return nil
 	end
-	return cur
+	local ok, found = pcall(findChildOf, inst, name)
+	if ok then
+		return found
+	end
+	return nil
 end
 
-local function fullName(inst)
-	local parts = {}
-	local cur = inst
-	while cur and cur ~= game do
-		table.insert(parts, 1, str(get(cur, "Name")))
-		cur = get(cur, "Parent")
-	end
-	return table.concat(parts, ".")
+local function getService(name)
+	return game:GetService(name)
 end
 
-local globalWait = wait
-local function wait(t)
+local function service(name)
+	local ok, found = pcall(getService, name)
+	if ok and found then
+		return found
+	end
+	return child(game, name)
+end
+
+local function waitSeconds(t)
 	if task and task.wait then
 		return task.wait(t)
 	end
-	return globalWait(t)
-end
-
-local function getPlayersService()
-	return game:GetService("Players")
+	return wait(t)
 end
 
 do
 	local deadline = clock() + 30
 	while clock() < deadline do
-		if not Players then
-			local ok, service = pcall(getPlayersService)
-			Players = ok and service or find(game, { "Players" })
-		end
+		Players = Players or service("Players")
 		player = Players and get(Players, "LocalPlayer")
 		if player then
 			break
 		end
-		wait(0.25)
+		waitSeconds(0.25)
 	end
 	if not player then
 		print("[NeedleTracker] couldn't find the local player - rejoin or wait for the game to load, then run again")
@@ -865,17 +858,10 @@ do
 	end
 end
 
+local RunService = service("RunService")
+
 local function isNeedleName(name)
 	return type(name) == "string" and string.find(string.lower(name), "needle", 1, true) ~= nil
-end
-
-local function ignored(path)
-	for _, prefix in ipairs(IGNORE_PREFIXES) do
-		if string.sub(path, 1, #prefix) == prefix then
-			return true
-		end
-	end
-	return false
 end
 
 local function positionOf(inst)
@@ -883,8 +869,8 @@ local function positionOf(inst)
 	if x then
 		return x, y, z
 	end
-	for _, child in ipairs(children(inst)) do
-		x, y, z = vec3(get(child, "Position"))
+	for _, c in ipairs(children(inst)) do
+		x, y, z = vec3(get(c, "Position"))
 		if x then
 			return x, y, z
 		end
@@ -892,87 +878,54 @@ local function positionOf(inst)
 	return nil
 end
 
-local function holderOf(inst)
-	local cur = get(inst, "Parent")
-	while cur and cur ~= workspace do
-		local plr = find(Players, { str(get(cur, "Name")) })
-		if plr and get(plr, "Character") == cur then
-			return str(get(plr, "Name"))
+local function scan()
+	local result = {}
+	local function add(inst, where, holder, backpackOf)
+		local name = str(get(inst, "Name"))
+		local base = where .. "." .. name
+		local key = base
+		local n = 1
+		while result[key] do
+			n = n + 1
+			key = base .. " #" .. n
 		end
-		cur = get(cur, "Parent")
-	end
-	return nil
-end
-
-local scanner = { nodes = {}, flags = {}, found = {}, running = false, nextStart = 0 }
-
-local function startPass()
-	scanner.nodes = { workspace }
-	scanner.flags = { false }
-	scanner.found = {}
-	scanner.running = true
-end
-
-local function stepPass()
-	local nodes, flags, found = scanner.nodes, scanner.flags, scanner.found
-	local deadline = clock() + SCAN_BUDGET
-	local processed = 0
-	while #nodes > 0 do
-		local top = #nodes
-		local root, insideWatched = nodes[top], flags[top]
-		nodes[top], flags[top] = nil, nil
-		local topLevel = root == workspace
-		for _, child in ipairs(children(root)) do
-			local name = get(child, "Name")
-			if not (topLevel and SKIP_FOLDERS[name]) then
-				local isWatchFolder = topLevel and WATCH_FOLDERS[name] == true
-				if (insideWatched or isNeedleName(name)) and not isWatchFolder then
-					found[#found + 1] = child
-				end
-				nodes[#nodes + 1] = child
-				flags[#flags + 1] = insideWatched or isWatchFolder
-			end
-		end
-		processed = processed + 1
-		if processed % 8 == 0 and clock() > deadline then
-			return false
-		end
-	end
-	scanner.running = false
-	return true
-end
-
-local function collectResults(found)
-	local result, seen = {}, {}
-	local function add(inst, backpackOf)
-		local path = fullName(inst)
-		if ignored(path) then
-			return
-		end
-		local base = path .. " [" .. str(get(inst, "ClassName")) .. "]"
-		seen[base] = (seen[base] or 0) + 1
-		local key = seen[base] > 1 and (base .. " #" .. seen[base]) or base
-		result[key] = { inst = inst, name = str(get(inst, "Name")), backpackOf = backpackOf }
+		result[key] = { inst = inst, name = name, holder = holder, backpackOf = backpackOf }
 	end
 
-	local matched = {}
-	for _, inst in ipairs(found) do
-		matched[fullName(inst)] = true
+	local watched = {}
+	for _, folderName in ipairs(WATCH_FOLDERS) do
+		watched[folderName] = true
+		local folder = child(workspace, folderName)
+		for _, item in ipairs(children(folder)) do
+			add(item, folderName)
+		end
 	end
-	for _, inst in ipairs(found) do
-		local parent = get(inst, "Parent")
-		if not (parent and matched[fullName(parent)]) then
-			add(inst, nil)
+
+	for _, item in ipairs(children(workspace)) do
+		local name = get(item, "Name")
+		if not watched[name] and isNeedleName(name) then
+			add(item, "Workspace")
+		end
+	end
+
+	local cam = get(workspace, "CurrentCamera")
+	for _, item in ipairs(children(cam)) do
+		if isNeedleName(get(item, "Name")) then
+			add(item, "Camera")
 		end
 	end
 
 	for _, plr in ipairs(children(Players)) do
-		local backpack = find(plr, { "Backpack" })
-		if backpack then
-			for _, tool in ipairs(children(backpack)) do
-				if isNeedleName(get(tool, "Name")) then
-					add(tool, str(get(plr, "Name")))
-				end
+		local plrName = str(get(plr, "Name"))
+		local character = get(plr, "Character")
+		for _, item in ipairs(children(character)) do
+			if isNeedleName(get(item, "Name")) then
+				add(item, plrName, plrName)
+			end
+		end
+		for _, item in ipairs(children(child(plr, "Backpack"))) do
+			if isNeedleName(get(item, "Name")) then
+				add(item, plrName .. ".Backpack", nil, plrName)
 			end
 		end
 	end
@@ -1105,7 +1058,7 @@ end
 
 local function myPosition()
 	local character = get(player, "Character")
-	local root = character and (find(character, { "HumanoidRootPart" }) or find(character, { "Head" }))
+	local root = child(character, "HumanoidRootPart") or child(character, "Head")
 	return vec3(root and get(root, "Position"))
 end
 
@@ -1131,10 +1084,36 @@ local state = {
 	lastEvent = nil,
 	lastEventAt = 0,
 }
-local alive = true
 local controls = {}
-
+local tracked = {}
+local trackedCount = 0
+local nextScan = 0
+local nextLabels = 0
+local connection
+local stopped = false
 local ui
+
+local function stop()
+	if stopped then
+		return
+	end
+	stopped = true
+	if connection then
+		pcall(function()
+			connection:Disconnect()
+		end)
+		connection = nil
+	end
+	for _, info in pairs(tracked) do
+		removeMarker(info.marker)
+	end
+	tracked = {}
+	if ui and ui.Alive then
+		ui:Destroy()
+	end
+	print("[NeedleTracker] stopped")
+end
+
 do
 	local ok, res = pcall(buildUI)
 	if ok then
@@ -1184,7 +1163,7 @@ if ui then
 	local origDestroy = ui.Destroy
 	ui.Destroy = function(self)
 		origDestroy(self)
-		alive = false
+		stop()
 	end
 end
 
@@ -1206,30 +1185,25 @@ local function updateLabels(entries)
 	if not ui then
 		return
 	end
-	if controls.status then
-		if #entries == 0 then
-			controls.status.Title = "Waiting for the needle"
-			controls.status.Description = "It only appears once someone digs it up"
-		else
-			controls.status.Title = string.format("Tracking %d object%s", #entries, #entries == 1 and "" or "s")
-			controls.status.Description = entries[1].text
-		end
+	if #entries == 0 then
+		controls.status.Title = "Waiting for the needle"
+		controls.status.Description = "It only appears once someone digs it up"
+	else
+		controls.status.Title = string.format("Tracking %d object%s", #entries, #entries == 1 and "" or "s")
+		controls.status.Description = entries[1].text
 	end
-	if controls.event and state.lastEvent then
+	if state.lastEvent then
 		controls.event.Title = state.lastEvent
 		controls.event.Description = string.format("%ds ago", math.floor(clock() - state.lastEventAt))
 	end
 end
 
-local tracked = {}
-local trackedCount = 0
-local nextLabels = 0
-
-local function applyResults(now)
-	for key, info in pairs(now) do
+local function applyResults(found)
+	for key, info in pairs(found) do
 		local existing = tracked[key]
 		if existing then
-			existing.holder = existing.backpackOf == nil and holderOf(existing.inst) or nil
+			existing.inst = info.inst
+			existing.holder = info.holder
 		else
 			local x, y, z = positionOf(info.inst)
 			local where = x and string.format(" at (%.1f, %.1f, %.1f)", x, y, z) or ""
@@ -1237,14 +1211,13 @@ local function applyResults(now)
 			state.lastEvent = "Appeared: " .. info.name
 			state.lastEventAt = clock()
 			notify("Needle appeared", info.name .. where, "success")
-			info.holder = info.backpackOf == nil and holderOf(info.inst) or nil
 			info.marker = newMarker()
 			tracked[key] = info
 			trackedCount = trackedCount + 1
 		end
 	end
 	for key, info in pairs(tracked) do
-		if not now[key] then
+		if not found[key] then
 			print("[NeedleTracker] removed: " .. key)
 			state.lastEvent = "Removed: " .. info.name
 			state.lastEventAt = clock()
@@ -1256,15 +1229,69 @@ local function applyResults(now)
 	end
 end
 
-print("[NeedleTracker] v" .. VERSION .. " running - N = ESP, T = tracers" .. (ui and "" or ", End = stop"))
-notify("Needle Tracker v" .. VERSION, "Tracks the needle once it's found", "success")
-
-while alive do
-	if ui and not ui.Alive then
-		break
+local function drawMarkers(entries)
+	local cam = state.enabled and get(workspace, "CurrentCamera")
+	local basis = cam and cameraBasis(cam)
+	local w, h = screenSize(cam)
+	local fov = cam and get(cam, "FieldOfView")
+	if type(fov) ~= "number" or fov <= 0 then
+		fov = 70
 	end
+	local px, py, pz = myPosition()
+
+	for _, info in pairs(tracked) do
+		local m = info.marker
+		if info.backpackOf then
+			entries[#entries + 1] = { text = info.name .. " in " .. info.backpackOf .. "'s backpack", dist = math.huge }
+			showMarker(m, false, false)
+		else
+			local nx, ny, nz = positionOf(info.inst)
+			local text = string.upper(info.name)
+			if info.holder then
+				text = text .. " (held by " .. info.holder .. ")"
+			end
+			local dist = math.huge
+			if px and nx then
+				dist = math.sqrt((nx - px) ^ 2 + (ny - py) ^ 2 + (nz - pz) ^ 2)
+				text = text .. " [" .. math.floor(dist + 0.5) .. " studs]"
+			end
+			entries[#entries + 1] = { text = text, dist = dist }
+
+			local sx, sy, onScreen, dirX, dirY
+			if basis and nx then
+				sx, sy, onScreen, dirX, dirY = project(fov, basis, nx, ny, nz, w, h)
+			end
+			if dirX == nil then
+				showMarker(m, false, false)
+			else
+				if not onScreen then
+					sx, sy = edgePoint(dirX, dirY, w, h)
+				end
+				local point = V2(sx, sy)
+				if state.tracers then
+					set(m.tracer, "From", V2(w / 2, h))
+					set(m.tracer, "To", point)
+				end
+				set(m.circle, "Position", point)
+				set(m.label, "Position", V2(sx, sy - 30))
+				if m.text ~= text then
+					set(m.label, "Text", text)
+					m.text = text
+				end
+				showMarker(m, true, state.tracers)
+			end
+		end
+	end
+
+	table.sort(entries, function(a, b)
+		return a.dist < b.dist
+	end)
+end
+
+local function step()
 	if not ui and isKeyDown(VK_QUIT) then
-		break
+		stop()
+		return
 	end
 	if pressed(VK_TOGGLE) then
 		flip(controls.esp, "enabled")
@@ -1274,86 +1301,38 @@ while alive do
 	end
 
 	local now = clock()
-	if not scanner.running and now >= scanner.nextStart then
-		startPass()
-	end
-	if scanner.running and stepPass() then
-		applyResults(collectResults(scanner.found))
-		scanner.nextStart = clock() + POLL_INTERVAL
+	if now >= nextScan then
+		nextScan = now + SCAN_INTERVAL
+		applyResults(scan())
 	end
 
 	local entries = {}
 	if trackedCount > 0 then
-		local cam = state.enabled and get(workspace, "CurrentCamera")
-		local basis = cam and cameraBasis(cam)
-		local w, h = screenSize(cam)
-		local fov = cam and get(cam, "FieldOfView")
-		if type(fov) ~= "number" or fov <= 0 then
-			fov = 70
-		end
-		local px, py, pz = myPosition()
-
-		for _, info in pairs(tracked) do
-			local m = info.marker
-			if info.backpackOf then
-				entries[#entries + 1] = { text = info.name .. " in " .. info.backpackOf .. "'s backpack", dist = math.huge }
-				showMarker(m, false, false)
-			else
-				local nx, ny, nz = positionOf(info.inst)
-				local text = string.upper(info.name)
-				if info.holder then
-					text = text .. " (held by " .. info.holder .. ")"
-				end
-				local dist = math.huge
-				if px and nx then
-					dist = math.sqrt((nx - px) ^ 2 + (ny - py) ^ 2 + (nz - pz) ^ 2)
-					text = text .. " [" .. math.floor(dist + 0.5) .. " studs]"
-				end
-				entries[#entries + 1] = { text = text, dist = dist }
-
-				local sx, sy, onScreen, dirX, dirY
-				if basis and nx then
-					sx, sy, onScreen, dirX, dirY = project(fov, basis, nx, ny, nz, w, h)
-				end
-				if dirX == nil then
-					showMarker(m, false, false)
-				else
-					if not onScreen then
-						sx, sy = edgePoint(dirX, dirY, w, h)
-					end
-					local point = V2(sx, sy)
-					if state.tracers then
-						set(m.tracer, "From", V2(w / 2, h))
-						set(m.tracer, "To", point)
-					end
-					set(m.circle, "Position", point)
-					set(m.label, "Position", V2(sx, sy - 30))
-					if m.text ~= text then
-						set(m.label, "Text", text)
-						m.text = text
-					end
-					showMarker(m, true, state.tracers)
-				end
-			end
-		end
-
-		table.sort(entries, function(a, b)
-			return a.dist < b.dist
-		end)
+		drawMarkers(entries)
 	end
 
 	if now >= nextLabels then
 		nextLabels = now + LABEL_INTERVAL
 		updateLabels(entries)
 	end
-
-	wait()
 end
 
-for _, info in pairs(tracked) do
-	removeMarker(info.marker)
+if not RunService then
+	print("[NeedleTracker] RunService not found")
+	stop()
+	return
 end
-if ui and ui.Alive then
-	ui:Destroy()
-end
-print("[NeedleTracker] stopped")
+
+connection = RunService.Heartbeat:Connect(function()
+	if stopped then
+		return
+	end
+	local ok, err = pcall(step)
+	if not ok then
+		warn("[NeedleTracker] stopped after an error: " .. tostring(err))
+		stop()
+	end
+end)
+
+print("[NeedleTracker] v" .. VERSION .. " running - N = ESP, T = tracers" .. (ui and "" or ", End = stop"))
+notify("Needle Tracker v" .. VERSION, "Tracks the needle once it's found", "success")
