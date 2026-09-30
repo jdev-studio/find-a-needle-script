@@ -1,9 +1,13 @@
 local JDUI_URL = "https://raw.githubusercontent.com/jdev-studio/jdui/refs/heads/main/JDUI"
 local function buildUI()
-	return loadstring(game:HttpGet(JDUI_URL))()
+	local ui = loadstring(game:HttpGet(JDUI_URL))()
+	if type(ui) ~= "table" then
+		ui = rawget(_G, "JDUI") or getfenv().JDUI
+	end
+	return ui
 end
 
-local VERSION = "1.0.3"
+local VERSION = "1.0.3b"
 local MENU_KEY, MENU_KEY_NAME = 0xA3, "Right Ctrl"
 local SCAN_INTERVAL = 1
 local LABEL_INTERVAL = 0.2
