@@ -1,6 +1,6 @@
 # find-a-needle-script
 
-Needle tracker for Find a Needle, with its own menu.
+Needle tracker for Find a Needle. The menu is [JDUI](https://github.com/jdev-studio/jdui).
 
 ## Running it
 
