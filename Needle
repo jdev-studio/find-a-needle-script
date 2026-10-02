@@ -7,7 +7,7 @@ local function buildUI()
 	return ui
 end
 
-local VERSION = "1.0.3b"
+local VERSION = "1.0.4"
 local MENU_KEY, MENU_KEY_NAME = 0xA3, "Right Ctrl"
 local SCAN_INTERVAL = 1
 local LABEL_INTERVAL = 0.2
@@ -429,6 +429,9 @@ if ui then
 	needleTab:Select()
 	pcall(function()
 		ui:SetKeybind(MENU_KEY)
+	end)
+	pcall(function()
+		ui:SetConfig("needle_menu")
 	end)
 	ui.Visible = false
 
